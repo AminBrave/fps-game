@@ -189,6 +189,7 @@ export default function App() {
   useEffect(() => {
     netcodeManager.connect();
     netcodeManager.onServerSnapshot = (_players, _tick, local) => {
+      setPlayersList(netcodeManager.sampleRemotePlayers());
       if (!local) return;
       const g = gameStateRef.current;
       const corrected = netcodeManager.reconcile(
