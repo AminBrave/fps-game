@@ -1,6 +1,7 @@
 import { BinaryProtocol, PACKET_TYPES } from './protocol';
 import { PlayerInput, PlayerState, VoxelDelta } from './types';
 import { simulatePlayer } from './simulation';
+import { RemoteSnapshotStore } from './interpolation';
 
 export interface UnacknowledgedInput {
   seq: number;
@@ -22,11 +23,14 @@ export class NetcodeManager {
   private inputSequence = 0;
   private pendingInputs: UnacknowledgedInput[] = [];
   private localClientId: string | null = null;
+  private roomId: string | null = null;
+  private readonly remoteSnapshots = new RemoteSnapshotStore();
 
   public onServerSnapshot?: (players: ServerPlayerSnapshot[], tick: number, local?: ServerPlayerSnapshot) => void;
   public onVoxelDestruction?: (delta: VoxelDelta) => void;
   public onChatMessage?: (sender: string, text: string) => void;
   public onConnectionChanged?: (connected: boolean) => void;
+  public onRoomChanged?: (roomId: string | null) => void;
 
   constructor() {
     if (typeof window !== 'undefined') this.connectWebSocket();
@@ -53,7 +57,10 @@ export class NetcodeManager {
     if (typeof window === 'undefined') return;
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      this.ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
+      const params = new URLSearchParams(window.location.search);
+      this.roomId = params.get('room');
+      const roomQuery = this.roomId ? `?room=${encodeURIComponent(this.roomId)}` : '';
+      this.ws = new WebSocket(`${protocol}//${window.location.host}/ws${roomQuery}`);
       this.ws.binaryType = 'arraybuffer';
 
       this.ws.onopen = () => {
@@ -72,6 +79,8 @@ export class NetcodeManager {
           const data = JSON.parse(event.data);
           if (data.type === 'INIT') {
             this.localClientId = data.clientId;
+            this.roomId = typeof data.roomId === 'string' ? data.roomId : this.roomId;
+            this.onRoomChanged?.(this.roomId);
           } else if (data.type === 'PONG') {
             this.pingMs = Math.max(0, Math.round(performance.now() - this.lastPingSentTime));
           } else if (data.type === 'CHAT') {
@@ -79,6 +88,7 @@ export class NetcodeManager {
           } else if (data.type === 'SNAPSHOT') {
             const players = data.players as ServerPlayerSnapshot[];
             const local = players.find(p => p.id === this.localClientId);
+            this.remoteSnapshots.push(data.tick, players.filter(p => p.id !== this.localClientId));
             this.onServerSnapshot?.(players, data.tick, local);
           }
         } catch {
@@ -136,6 +146,12 @@ export class NetcodeManager {
     return this.pendingInputs.slice();
   }
 
+  public sampleRemotePlayers(time = performance.now()): PlayerState[] {
+    return this.remoteSnapshots.sample(time);
+  }
+
+  public getRoomId() { return this.roomId; }
+
   public sendVoxelDestruction(x: number, y: number, z: number, radius: number) {
     // Destruction is server-authoritative. This method is intentionally disabled
     // until a validated server-side weapon event is implemented.
@@ -154,15 +170,15 @@ export class NetcodeManager {
     this.ws.send(JSON.stringify({ type: 'PING' }));
   }
 
-  public reconcile(serverLastAckSeq: number, serverPos: [number, number, number], currentPos: [number, number, number]) {
+  public reconcile(serverLastAckSeq: number, serverPos: [number, number, number], currentPos: [number, number, number], serverVelocity: [number, number, number] = [0,0,0], serverGrounded = true) {
     this.acknowledge(serverLastAckSeq);
 
     // Rebuild the local prediction from the authoritative state, then replay
     // every input the server has not acknowledged yet.
     let predicted = {
       position: [...serverPos] as [number, number, number],
-      velocity: [0, 0, 0] as [number, number, number],
-      grounded: true,
+      velocity: [...serverVelocity] as [number, number, number],
+      grounded: serverGrounded,
     };
 
     for (const pending of this.pendingInputs) {
