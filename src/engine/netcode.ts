@@ -1,5 +1,6 @@
 import { BinaryProtocol, PACKET_TYPES } from './protocol';
 import { PlayerInput, PlayerState, VoxelDelta } from './types';
+import { simulatePlayer } from './simulation';
 
 export interface UnacknowledgedInput {
   seq: number;
@@ -155,18 +156,33 @@ export class NetcodeManager {
 
   public reconcile(serverLastAckSeq: number, serverPos: [number, number, number], currentPos: [number, number, number]) {
     this.acknowledge(serverLastAckSeq);
+
+    // Rebuild the local prediction from the authoritative state, then replay
+    // every input the server has not acknowledged yet.
+    let predicted = {
+      position: [...serverPos] as [number, number, number],
+      velocity: [0, 0, 0] as [number, number, number],
+      grounded: true,
+    };
+
+    for (const pending of this.pendingInputs) {
+      predicted = simulatePlayer(predicted, pending.input, pending.dt);
+    }
+
     const drift = Math.hypot(
-      currentPos[0] - serverPos[0],
-      currentPos[1] - serverPos[1],
-      currentPos[2] - serverPos[2],
+      currentPos[0] - predicted.position[0],
+      currentPos[1] - predicted.position[1],
+      currentPos[2] - predicted.position[2],
     );
 
-    if (drift < 0.08) return currentPos;
-    const alpha = drift > 1.0 ? 1 : 0.35;
+    if (drift < 0.05) return currentPos;
+    if (drift > 1.0) return predicted.position;
+
+    const alpha = 0.45;
     return [
-      currentPos[0] + (serverPos[0] - currentPos[0]) * alpha,
-      currentPos[1] + (serverPos[1] - currentPos[1]) * alpha,
-      currentPos[2] + (serverPos[2] - currentPos[2]) * alpha,
+      currentPos[0] + (predicted.position[0] - currentPos[0]) * alpha,
+      currentPos[1] + (predicted.position[1] - currentPos[1]) * alpha,
+      currentPos[2] + (predicted.position[2] - currentPos[2]) * alpha,
     ] as [number, number, number];
   }
 }
