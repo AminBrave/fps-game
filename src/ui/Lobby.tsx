@@ -38,6 +38,8 @@ export interface MatchSettings {
   particleDensity: 'low' | 'high';
   volumetricFog: boolean;
   soundVolume: number;
+  mapId: 'urban_industrial' | 'desert_outpost' | 'night_operations';
+  weather: 'urban_clear' | 'desert_sandstorm' | 'night_rain';
 }
 
 export type CamoType = 'factory' | 'urban_digital' | 'od_green' | 'carbon_fiber' | 'desert_splinter' | 'gold_damascus';
@@ -354,6 +356,23 @@ export const Lobby: React.FC<LobbyProps> = ({
                     </button>
                   ))}
                 </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-[10px] font-mono text-zinc-400">MAP
+                  <select value={matchSettings.mapId} onChange={e => updateSetting('mapId', e.target.value as MatchSettings['mapId'])} className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-200">
+                    <option value="urban_industrial">Urban Industrial</option>
+                    <option value="desert_outpost">Desert Outpost</option>
+                    <option value="night_operations">Night Operations</option>
+                  </select>
+                </label>
+                <label className="text-[10px] font-mono text-zinc-400">WEATHER
+                  <select value={matchSettings.weather} onChange={e => updateSetting('weather', e.target.value as MatchSettings['weather'])} className="mt-1 w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-xs text-zinc-200">
+                    <option value="urban_clear">Sunny / Clear</option>
+                    <option value="desert_sandstorm">Sandstorm / Fog</option>
+                    <option value="night_rain">Rain / Night</option>
+                  </select>
+                </label>
               </div>
 
               {/* Match Rules & Events */}
