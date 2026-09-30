@@ -13,6 +13,8 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const server = createServer(app);
 const PORT = Number(process.env.PORT || 3000);
+// Bind publicly so Google AI Studio's preview/proxy can reach the app.
+const HOST = process.env.HOST || '0.0.0.0';
 const isProduction = process.env.NODE_ENV === 'production';
 
 app.disable('x-powered-by');
@@ -246,7 +248,7 @@ setInterval(() => {
 async function startServer() {
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
+    const vite = await createViteServer({ server: { middlewareMode: true, host: HOST }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(__dirname, 'dist');
@@ -256,8 +258,8 @@ async function startServer() {
     }
   }
 
-  server.listen(PORT, () => {
-    console.log(`[BreachPoint] Authoritative server listening on :${PORT} (prod=${isProduction})`);
+  server.listen(PORT, HOST, () => {
+    console.log(`[BreachPoint] Authoritative server listening on http://${HOST}:${PORT} (prod=${isProduction})`);
   });
 }
 
