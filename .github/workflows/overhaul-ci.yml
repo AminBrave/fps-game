@@ -15,4 +15,6 @@ jobs:
         with:
           bun-version: "1.2.20"
       - run: bun install --frozen-lockfile
-      - name: TypeScript lint\n        id: lint\n        continue-on-error: true\n        run: bun run lint\n\n      - name: Capture TypeScript diagnostics\n        if: steps.lint.outcome == 'failure'\n        uses: actions/github-script@v9\n        with:\n          script: |\n            const { exitCode, stdout, stderr } = await exec.getExecOutput('bun', ['run', 'lint'], { ignoreReturnCode: true });\n            const output = [stdout, stderr].filter(Boolean).join('\\n');\n            const body = '### Temporary CI diagnostic\\n\\n```text\\n' + output.slice(-12000) + '\\n```';\n            await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number, body });\n            core.setFailed('TypeScript lint failed; diagnostics were posted to the PR.');\n\n      - run: bun run test\n      - run: bun run build
+      - run: bun run lint
+      - run: bun run test
+      - run: bun run build
