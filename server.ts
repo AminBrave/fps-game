@@ -135,6 +135,7 @@ wss.on('connection', (ws) => {
   if (!client.roomId) {
     const room = rooms.create(clientId, { map: 'urban_industrial', weather: 'urban_clear', botCount: 4, maxPlayers: 12 });
     client.roomId = room.id;
+    rooms.join(client.roomId, clientId);
   } else {
     rooms.join(client.roomId, clientId);
   }
