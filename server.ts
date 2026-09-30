@@ -114,10 +114,10 @@ const clients = new Map<string, ConnectedClient>();
 const rooms = new RoomManager();
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 });
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, request) => {
   const clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
   const requestedRoom = (() => {
-    try { return new URL(ws.url || '', 'http://localhost').searchParams.get('room'); } catch { return null; }
+    try { return new URL(request.url || '', 'http://localhost').searchParams.get('room'); } catch { return null; }
   })();
   const client: ConnectedClient = {
     ws,
