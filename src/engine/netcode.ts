@@ -152,6 +152,26 @@ export class NetcodeManager {
 
   public getRoomId() { return this.roomId; }
 
+  public joinRoom(roomId: string) {
+    this.roomId = roomId;
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', roomId);
+      window.history.replaceState({}, '', url);
+    }
+    this.ws?.close();
+    this.ws = null;
+    this.connectWebSocket();
+  }
+
+  public disconnect() {
+    if (this.reconnectTimer !== null && typeof window !== 'undefined') window.clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.ws?.close();
+    this.ws = null;
+    this.isConnected = false;
+  }
+
   public sendVoxelDestruction(x: number, y: number, z: number, radius: number) {
     // Destruction is server-authoritative. This method is intentionally disabled
     // until a validated server-side weapon event is implemented.
