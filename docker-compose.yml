@@ -1,0 +1,21 @@
+services:
+  breachpoint-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: breachpoint_fps_server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - TICK_RATE=30
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048M
+        reservations:
+          cpus: '0.5'
+          memory: 512M

@@ -1,0 +1,6 @@
+{
+  "name": "BREACHPOINT: Tactical Micro-Voxel FPS",
+  "description": "Fast-paced browser FPS featuring Call of Duty movement dynamics, micro-voxel destruction, modular gunsmith, and authoritative netcode.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
