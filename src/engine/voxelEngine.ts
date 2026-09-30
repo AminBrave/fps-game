@@ -477,7 +477,7 @@ export class VoxelEngine {
       for (let x = -42; x <= 42; x += 6) {
         for (let z = -42; z <= 42; z += 6) {
           if (Math.abs(x) < 12 && Math.abs(z) < 12) continue;
-          this.setVoxelAtWorld(x, 0.5, z, VOXEL_TYPES.SAND);
+          this.setVoxelAtWorld(x, 0.5, z, VOXEL_TYPES.BRICK);
           this.setVoxelAtWorld(x, 0.75, z, VOXEL_TYPES.SAND);
         }
       }
