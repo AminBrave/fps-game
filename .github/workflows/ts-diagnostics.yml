@@ -3,8 +3,10 @@ name: Temporary TypeScript Diagnostics
 on:
   push:
     branches: ["overhaul/**"]
+    paths-ignore: ["lint-report.txt"]
   pull_request:
     branches: ["main"]
+    paths-ignore: ["lint-report.txt"]
 
 permissions:
   contents: read
@@ -20,15 +22,4 @@ jobs:
         with:
           bun-version: "1.2.20"
       - run: bun install --frozen-lockfile
-      - uses: actions/github-script@v9
-        with:
-          script: |
-            const { exitCode, stdout, stderr } = await exec.getExecOutput('bun', ['run', 'lint'], { ignoreReturnCode: true });
-            const output = [stdout, stderr].filter(Boolean).join('\\n');
-            console.log(output);
-            const number = context.payload.pull_request?.number;
-            if (number) {
-              const fence = String.fromCharCode(96).repeat(3);
-              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: number, body: '### Temporary TypeScript diagnostics\\n\\n' + fence + 'text\\n' + output.slice(-12000) + '\\n' + fence });
-            }
-            if (exitCode !== 0) core.setFailed('TypeScript lint failed.');
+      - name: Write lint diagnostics\n        run: |\n          set +e\n          bun run lint > lint-report.txt 2>&1\n          code=$?\n          git config user.name "github-actions[bot]"\n          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"\n          git add lint-report.txt\n          git commit -m "ci: capture TypeScript diagnostics [skip ci]" || true\n          git push origin HEAD:${GITHUB_HEAD_REF:-${GITHUB_REF_NAME}} || true\n          exit $code\n
