@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import { BinaryProtocol, PACKET_TYPES } from './src/engine/protocol';
 import { FIXED_DT, inputFlagsToPlayerInput, simulatePlayer } from './src/engine/simulation';
 import { PlayerInput } from './src/engine/types';
+import { RoomManager } from './src/engine/rooms';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -40,6 +41,18 @@ app.get('/api/health', (_req: Request, res: Response) => {
 
 app.get('/api/leaderboard', (_req: Request, res: Response) => res.json(LEADERBOARD_DATA));
 
+app.get('/api/rooms', (_req: Request, res: Response) => res.json(rooms.list()));
+
+app.post('/api/rooms', (req: Request, res: Response) => {
+  const hostId = `host_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+  const map = typeof req.body?.map === 'string' ? req.body.map.slice(0, 40) : 'urban_industrial';
+  const weather = typeof req.body?.weather === 'string' ? req.body.weather.slice(0, 40) : 'urban_clear';
+  const botCount = Math.max(0, Math.min(16, Number(req.body?.botCount) || 0));
+  const maxPlayers = Math.max(1, Math.min(32, Number(req.body?.maxPlayers) || 12));
+  const room = rooms.create(hostId, { map, weather, botCount, maxPlayers });
+  res.status(201).json(room);
+});
+
 app.post('/api/auth/token', (req: Request, res: Response) => {
   const raw = typeof req.body?.username === 'string' ? req.body.username : '';
   const username = raw.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24) || `Operator_${Math.floor(Math.random() * 1000)}`;
@@ -60,6 +73,7 @@ interface ConnectedClient {
   team: 'spec_ops' | 'shadow_company';
   messagesThisSecond: number;
   messageWindowStart: number;
+  roomId: string;
 }
 
 function createInitialState() {
@@ -97,10 +111,14 @@ function isNewerSequence(next: number, previous: number) {
 }
 
 const clients = new Map<string, ConnectedClient>();
+const rooms = new RoomManager();
 const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 });
 
 wss.on('connection', (ws) => {
   const clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const requestedRoom = (() => {
+    try { return new URL(ws.url || '', 'http://localhost').searchParams.get('room'); } catch { return null; }
+  })();
   const client: ConnectedClient = {
     ws,
     id: clientId,
@@ -111,10 +129,17 @@ wss.on('connection', (ws) => {
     team: clients.size % 2 === 0 ? 'spec_ops' : 'shadow_company',
     messagesThisSecond: 0,
     messageWindowStart: Date.now(),
+    roomId: requestedRoom && rooms.has(requestedRoom) ? requestedRoom : '',
   };
+  if (!client.roomId) {
+    const room = rooms.create(clientId, { map: 'urban_industrial', weather: 'urban_clear', botCount: 4, maxPlayers: 12 });
+    client.roomId = room.id;
+  } else {
+    rooms.join(client.roomId, clientId);
+  }
   clients.set(clientId, client);
 
-  ws.send(JSON.stringify({ type: 'INIT', clientId, team: client.team, tickRate: 30 }));
+  ws.send(JSON.stringify({ type: 'INIT', clientId, roomId: client.roomId, team: client.team, tickRate: 30 }));
 
   ws.on('message', (raw) => {
     if (Buffer.isBuffer(raw)) {
@@ -163,7 +188,7 @@ wss.on('connection', (ws) => {
         if (!text) return;
         const chat = JSON.stringify({ type: 'CHAT', sender: client.name, text });
         for (const peer of clients.values()) {
-          if (peer.ws.readyState === WebSocket.OPEN) peer.ws.send(chat);
+          if (peer.roomId === client.roomId && peer.ws.readyState === WebSocket.OPEN) peer.ws.send(chat);
         }
       }
     } catch {
@@ -171,8 +196,8 @@ wss.on('connection', (ws) => {
     }
   });
 
-  ws.on('close', () => clients.delete(clientId));
-  ws.on('error', () => clients.delete(clientId));
+  ws.on('close', () => { clients.delete(clientId); rooms.leave(client.roomId, clientId); });
+  ws.on('error', () => { clients.delete(clientId); rooms.leave(client.roomId, clientId); });
 });
 
 let serverTick = 0;
@@ -210,7 +235,14 @@ setInterval(() => {
 
   if (clients.size === 0) return;
 
-  const players = Array.from(clients.values()).map(c => ({
+  for (const room of rooms.list()) {
+    void room;
+  }
+
+  for (const client of clients.values()) {
+    if (client.ws.readyState !== WebSocket.OPEN) continue;
+    const roomPlayers = Array.from(clients.values()).filter(peer => peer.roomId === client.roomId);
+    const players = roomPlayers.map(c => ({
     id: c.id,
     name: c.name,
     position: c.state.position,
@@ -242,6 +274,7 @@ setInterval(() => {
       players,
     };
     client.ws.send(JSON.stringify(snapshot));
+  }
   }
 }, 1000 / 30);
 
