@@ -42,8 +42,6 @@ export class BallisticsEngine {
     botManager: BotManager | null
   ): BallisticHitResult {
     const dir = direction.clone().normalize();
-    const currPos = origin.clone();
-
     // 1. Caliber Ballistics & Kinetic Energy Parameters
     let bulletMassGrams = 4.0; // 5.56 NATO default
     let muzzleVelocity = weapon.bulletSpeed; // m/s
@@ -61,6 +59,7 @@ export class BallisticsEngine {
     const bulletMassKg = bulletMassGrams / 1000.0;
     const initialEnergy = 0.5 * bulletMassKg * muzzleVelocity * muzzleVelocity;
     let currentEnergy = initialEnergy;
+    const maxRange = 120;
 
     // FMJ attachment penetration bonus
     const fmjBonus = weapon.attachments.barrel === 'extended_heavy' ? 0.35 : 0.0;
