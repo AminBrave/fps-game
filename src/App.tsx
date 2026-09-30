@@ -15,8 +15,10 @@ import { BotManager, BotInstance } from './engine/botAI';
 import { netcodeManager } from './engine/netcode';
 import { BallisticsEngine } from './engine/ballistics';
 import { WeaponFXManager } from './engine/weaponFX';
-import { createViewmodelRig, attachViewmodel, syncViewmodelCamera, findMuzzleSocket, getSocketWorldPosition, ViewmodelRig } from './engine/viewmodel';
-import { WeatherSystem, WeatherPresetId } from './engine/weather';
+import { createViewmodelRig, attachViewmodel, syncViewmodelCamera, findMuzzleSocket, getSocketWorldPosition } from './engine/viewmodel';
+import type { ViewmodelRig } from './engine/viewmodel';
+import { WeatherSystem } from './engine/weather';
+import type { WeatherPresetId } from './engine/weather';
 import {
   PlayerInput,
   PlayerState,
