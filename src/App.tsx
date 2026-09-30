@@ -219,6 +219,28 @@ export default function App() {
       });
   }, []);
 
+  // Lobby room discovery stays in React UI state and never enters the Three.js render loop.
+  useEffect(() => {
+    const refreshRooms = () => fetch('/api/rooms').then(r => r.ok ? r.json() : []).then(setRoomSummaries).catch(() => {});
+    refreshRooms();
+    const timer = window.setInterval(refreshRooms, 3000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const createRoom = useCallback(async () => {
+    try {
+      const response = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ map: 'urban_industrial', weather: 'urban_clear', botCount: matchSettingsRef.current.botCount, maxPlayers: 12 }),
+      });
+      if (!response.ok) return;
+      const room = await response.json();
+      netcodeManager.joinRoom(room.id);
+      setRoomSummaries(prev => [room, ...prev.filter(r => r.id !== room.id)]);
+    } catch {}
+  }, []);
+
   // Update volume whenever settings or matchSettings mutate
   useEffect(() => {
     soundEngine.setVolume(matchSettings.soundVolume);
@@ -1065,6 +1087,9 @@ export default function App() {
           matchSettings={matchSettings}
           onUpdateMatchSettings={s => setMatchSettings(s)}
           onDeployMatch={handleDeployMatch}
+          rooms={roomSummaries}
+          onCreateRoom={createRoom}
+          onJoinRoom={roomId => netcodeManager.joinRoom(roomId)}
         />
       )}
 
