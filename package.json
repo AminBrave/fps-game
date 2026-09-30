@@ -7,7 +7,7 @@
     "dev": "tsx server.ts",
     "start": "tsx server.ts",
     "build": "vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --host 0.0.0.0",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test": "tsx tests/simulation.test.ts"
@@ -39,5 +39,8 @@
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
