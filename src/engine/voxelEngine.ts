@@ -470,9 +470,9 @@ export class VoxelEngine {
    * elevated catwalks, and breachable concrete/plywood walls.
    */
   public generateKillhouseCompound() {
-    // 1. Concrete perimeter foundation (48m x 48m)
-    for (let x = -24; x <= 24; x += VOXEL_SIZE) {
-      for (let z = -24; z <= 24; z += VOXEL_SIZE) {
+    // 1. Expanded 96m x 96m tactical perimeter with vertical and subterranean routes.
+    for (let x = -48; x <= 48; x += VOXEL_SIZE) {
+      for (let z = -48; z <= 48; z += VOXEL_SIZE) {
         this.setVoxelAtWorld(x, 0, z, VOXEL_TYPES.CONCRETE);
       }
     }
@@ -480,13 +480,13 @@ export class VoxelEngine {
     // 2. Outer Warehouse Boundary Walls (4m high)
     const wallH = 4.0;
     for (let h = VOXEL_SIZE; h <= wallH; h += VOXEL_SIZE) {
-      for (let i = -24; i <= 24; i += VOXEL_SIZE) {
+      for (let i = -48; i <= 48; i += VOXEL_SIZE) {
         // North & South walls
-        this.setVoxelAtWorld(i, h, -24, VOXEL_TYPES.CONCRETE);
-        this.setVoxelAtWorld(i, h, 24, VOXEL_TYPES.CONCRETE);
+        this.setVoxelAtWorld(i, h, -48, VOXEL_TYPES.CONCRETE);
+        this.setVoxelAtWorld(i, h, 48, VOXEL_TYPES.CONCRETE);
         // East & West walls
-        this.setVoxelAtWorld(-24, h, i, VOXEL_TYPES.CONCRETE);
-        this.setVoxelAtWorld(24, h, i, VOXEL_TYPES.CONCRETE);
+        this.setVoxelAtWorld(-48, h, i, VOXEL_TYPES.CONCRETE);
+        this.setVoxelAtWorld(48, h, i, VOXEL_TYPES.CONCRETE);
       }
     }
 
@@ -566,6 +566,28 @@ export class VoxelEngine {
     createCoverCrates(-12, -8);
     createCoverCrates(12, 8);
     createCoverCrates(0, -14);
+
+    // 6. Elevated catwalk network: long sightlines with alternating cover.
+    for (let x = -30; x <= 30; x += VOXEL_SIZE) {
+      for (let z = -0.75; z <= 0.75; z += VOXEL_SIZE) {
+        for (let y = 5.0; y <= 5.25; y += VOXEL_SIZE) this.setVoxelAtWorld(x, y, z, VOXEL_TYPES.METAL);
+      }
+    }
+    for (let x = -30; x <= 30; x += 6) {
+      for (let y = 0.25; y <= 5.0; y += VOXEL_SIZE) {
+        for (let z = -0.35; z <= 0.35; z += VOXEL_SIZE) this.setVoxelAtWorld(x, y, z, VOXEL_TYPES.METAL);
+      }
+    }
+
+    // 7. Subterranean tunnel and reinforced access shafts.
+    for (let x = -22; x <= 22; x += VOXEL_SIZE) {
+      for (let z = 20; z <= 23; z += VOXEL_SIZE) {
+        for (let y = 0.25; y <= 2.25; y += VOXEL_SIZE) {
+          const shell = z < 20.5 || z > 22.5 || y > 1.9;
+          if (shell) this.setVoxelAtWorld(x, y, z, VOXEL_TYPES.CONCRETE);
+        }
+      }
+    }
 
     // Initial meshing for all chunks
     for (const chunk of this.chunks.values()) {
