@@ -3,6 +3,9 @@
  * Real-world material densities, hardness ratings, and cumulative degradation thresholds.
  */
 
+export const STRUCTURAL_MASS_SCALE = 1.35;
+export const STRUCTURAL_DURABILITY_SCALE = 3.0;
+
 export interface MaterialProperties {
   id: number;
   name: string;
@@ -43,10 +46,10 @@ export const MATERIAL_REGISTRY: Record<number, MaterialProperties> = {
   [MATERIAL_TYPES.CONCRETE]: {
     id: 1,
     name: 'Reinforced Concrete',
-    density: 2400,        // 2,400 kg/m³
+    density: 3240,        // 2,400 kg/m³
     hardness: 6.5,
     elasticity: 0.25,
-    durability: 2800,     // Requires multiple rifle rounds to breach
+    durability: 8400,     // Requires multiple rifle rounds to breach
     color: 0x82888f,
     soundType: 'concrete',
     sparkColor: 0xffddaa,
@@ -55,10 +58,10 @@ export const MATERIAL_REGISTRY: Record<number, MaterialProperties> = {
   [MATERIAL_TYPES.WOOD]: {
     id: 2,
     name: 'Treated Plywood & Timber',
-    density: 650,         // 650 kg/m³
+    density: 878,         // 650 kg/m³
     hardness: 2.2,
     elasticity: 0.15,
-    durability: 750,      // Easily penetrated by AR/marksman rounds
+    durability: 2250,      // Easily penetrated by AR/marksman rounds
     color: 0x8a6240,
     soundType: 'wood',
     sparkColor: 0x997755,
@@ -67,10 +70,10 @@ export const MATERIAL_REGISTRY: Record<number, MaterialProperties> = {
   [MATERIAL_TYPES.METAL]: {
     id: 3,
     name: 'Corrugated Sheet Metal',
-    density: 7850,        // 7,850 kg/m³
+    density: 10598,        // 7,850 kg/m³
     hardness: 5.2,
     elasticity: 0.45,
-    durability: 1900,
+    durability: 5700,
     color: 0x3a424a,
     soundType: 'metal',
     sparkColor: 0xffea77,
@@ -79,10 +82,10 @@ export const MATERIAL_REGISTRY: Record<number, MaterialProperties> = {
   [MATERIAL_TYPES.BRICK]: {
     id: 4,
     name: 'Masonry Kiln Brick',
-    density: 1920,        // 1,920 kg/m³
+    density: 2592,        // 1,920 kg/m³
     hardness: 5.8,
     elasticity: 0.2,
-    durability: 2100,
+    durability: 6300,
     color: 0x944a3d,
     soundType: 'brick',
     sparkColor: 0xffaa66,
@@ -91,10 +94,10 @@ export const MATERIAL_REGISTRY: Record<number, MaterialProperties> = {
   [MATERIAL_TYPES.GLASS]: {
     id: 5,
     name: 'Reinforced Safety Glass',
-    density: 2500,        // 2,500 kg/m³
+    density: 3375,        // 2,500 kg/m³
     hardness: 5.5,
     elasticity: 0.1,
-    durability: 250,      // Shatters on single bullet hit
+    durability: 750,      // Shatters on single bullet hit
     color: 0x66aacc,
     soundType: 'glass',
     sparkColor: 0xaaddff,
@@ -103,10 +106,10 @@ export const MATERIAL_REGISTRY: Record<number, MaterialProperties> = {
   [MATERIAL_TYPES.SANDBAG]: {
     id: 6,
     name: 'Ballistic Sandbag Barrier',
-    density: 1600,        // 1,600 kg/m³
+    density: 2160,        // 1,600 kg/m³
     hardness: 3.0,
     elasticity: 0.05,     // Absorbs kinetic energy rapidly without ricochet
-    durability: 3200,
+    durability: 9600,
     color: 0x9c8a62,
     soundType: 'sand',
     sparkColor: 0xcca872,
@@ -115,10 +118,10 @@ export const MATERIAL_REGISTRY: Record<number, MaterialProperties> = {
   [MATERIAL_TYPES.ARMOR_STEEL]: {
     id: 7,
     name: 'Hardened Armor Steel Plate',
-    density: 7900,
+    density: 10665,
     hardness: 8.8,
     elasticity: 0.65,     // High ricochet probability
-    durability: 6500,
+    durability: 19500,
     color: 0x22262a,
     soundType: 'metal',
     sparkColor: 0xffffff,
