@@ -8,171 +8,167 @@ export interface UnacknowledgedInput {
   predPos: [number, number, number];
 }
 
+export interface ServerPlayerSnapshot extends PlayerState {
+  ackSeq?: number;
+}
+
 export class NetcodeManager {
   private ws: WebSocket | null = null;
-  private isConnected: boolean = false;
-  private pingMs: number = 24;
-  private lastPingSentTime: number = 0;
-
-  // Client Prediction & Reconciliation Buffer
-  private inputSequence: number = 0;
+  private isConnected = false;
+  private pingMs = 0;
+  private lastPingSentTime = 0;
+  private reconnectTimer: number | null = null;
+  private inputSequence = 0;
   private pendingInputs: UnacknowledgedInput[] = [];
+  private localClientId: string | null = null;
 
-  // Callbacks
-  public onServerSnapshot?: (players: PlayerState[], tick: number) => void;
+  public onServerSnapshot?: (players: ServerPlayerSnapshot[], tick: number, local?: ServerPlayerSnapshot) => void;
   public onVoxelDestruction?: (delta: VoxelDelta) => void;
   public onChatMessage?: (sender: string, text: string) => void;
+  public onConnectionChanged?: (connected: boolean) => void;
 
   constructor() {
-    this.connectWebSocket();
+    if (typeof window !== 'undefined') this.connectWebSocket();
   }
 
   public connect() {
-    if (!this.ws || this.ws.readyState === WebSocket.CLOSED) {
-      this.connectWebSocket();
-    }
+    if (!this.ws || this.ws.readyState === WebSocket.CLOSED) this.connectWebSocket();
   }
 
-  public getSequence(): number {
-    return ++this.inputSequence;
+  public getSequence() {
+    this.inputSequence = (this.inputSequence + 1) & 0xffff;
+    return this.inputSequence;
   }
 
-  public getPing(): number {
+  public getPing() {
     return this.pingMs;
   }
 
+  public isOnline() {
+    return this.isConnected;
+  }
+
   private connectWebSocket() {
+    if (typeof window === 'undefined') return;
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-
-      this.ws = new WebSocket(wsUrl);
+      this.ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
       this.ws.binaryType = 'arraybuffer';
 
       this.ws.onopen = () => {
         this.isConnected = true;
+        this.onConnectionChanged?.(true);
       };
 
       this.ws.onmessage = (event) => {
         if (event.data instanceof ArrayBuffer) {
           this.handleBinaryMessage(event.data);
-        } else if (typeof event.data === 'string') {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.type === 'PONG') {
-              this.pingMs = Math.round(performance.now() - this.lastPingSentTime);
-            } else if (data.type === 'CHAT') {
-              this.onChatMessage?.(data.sender, data.text);
-            } else if (data.type === 'SNAPSHOT') {
-              this.onServerSnapshot?.(data.players, data.tick);
-            }
-          } catch {
-            // ignore malformed text
+          return;
+        }
+        if (typeof event.data !== 'string') return;
+
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'INIT') {
+            this.localClientId = data.clientId;
+          } else if (data.type === 'PONG') {
+            this.pingMs = Math.max(0, Math.round(performance.now() - this.lastPingSentTime));
+          } else if (data.type === 'CHAT') {
+            this.onChatMessage?.(data.sender, data.text);
+          } else if (data.type === 'SNAPSHOT') {
+            const players = data.players as ServerPlayerSnapshot[];
+            const local = players.find(p => p.id === this.localClientId);
+            this.onServerSnapshot?.(players, data.tick, local);
           }
+        } catch {
+          // Malformed network data is discarded.
         }
       };
 
       this.ws.onclose = () => {
         this.isConnected = false;
-        // Auto-reconnect after 3s
-        setTimeout(() => this.connectWebSocket(), 3000);
+        this.onConnectionChanged?.(false);
+        if (this.reconnectTimer === null) {
+          this.reconnectTimer = window.setTimeout(() => {
+            this.reconnectTimer = null;
+            this.connectWebSocket();
+          }, 1500);
+        }
       };
-
-      this.ws.onerror = () => {
-        // Will close and reconnect
-      };
+      this.ws.onerror = () => {};
     } catch {
-      // In standalone client preview mode without active server socket
       this.isConnected = false;
+      this.onConnectionChanged?.(false);
     }
   }
 
   private handleBinaryMessage(buffer: ArrayBuffer) {
     const view = new DataView(buffer);
     const packetType = view.getUint8(0);
-
     if (packetType === PACKET_TYPES.VOXEL_DESTRUCTION) {
       const delta = BinaryProtocol.unpackVoxelDelta(buffer);
-      this.onVoxelDestruction?.({
-        x: delta.x,
-        y: delta.y,
-        z: delta.z,
-        radius: delta.radius,
-        timestamp: Date.now(),
-      });
+      if (delta) {
+        this.onVoxelDestruction?.({ ...delta, timestamp: Date.now() });
+      }
     }
   }
 
-  public sendInput(
-    input: PlayerInput,
-    posX: number,
-    posY: number,
-    posZ: number
-  ) {
-    // Store in unacknowledged prediction history
+  public sendInput(input: PlayerInput, posX: number, posY: number, posZ: number) {
     this.pendingInputs.push({
       seq: input.seq,
       dt: input.dt,
       input: { ...input },
       predPos: [posX, posY, posZ],
     });
+    if (this.pendingInputs.length > 120) this.pendingInputs.shift();
 
-    if (this.pendingInputs.length > 120) {
-      this.pendingInputs.shift();
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(BinaryProtocol.packClientInput(input, posX, posY, posZ));
     }
+  }
 
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const packed = BinaryProtocol.packClientInput(input, posX, posY, posZ);
-      this.ws.send(packed);
-    }
+  public acknowledge(seq: number) {
+    this.pendingInputs = this.pendingInputs.filter(item => item.seq > seq);
+  }
+
+  public getPendingInputs() {
+    return this.pendingInputs.slice();
   }
 
   public sendVoxelDestruction(x: number, y: number, z: number, radius: number) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const packed = BinaryProtocol.packVoxelDelta(x, y, z, radius);
-      this.ws.send(packed);
-    }
+    // Destruction is server-authoritative. This method is intentionally disabled
+    // until a validated server-side weapon event is implemented.
+    void x; void y; void z; void radius;
   }
 
   public sendChat(sender: string, text: string) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'CHAT', sender, text }));
-    }
+    const safeText = text.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, 200);
+    if (!safeText || this.ws?.readyState !== WebSocket.OPEN) return;
+    this.ws.send(JSON.stringify({ type: 'CHAT', sender: sender.slice(0, 32), text: safeText }));
   }
 
-  /**
-   * Reconciles authoritative server snapshot with local prediction buffer.
-   * If drift exceeds threshold, rolls back and replays subsequent inputs.
-   */
-  public reconcile(
-    serverLastAckSeq: number,
-    serverPos: [number, number, number],
-    currentPos: [number, number, number]
-  ): [number, number, number] {
-    // Prune acknowledged inputs
-    this.pendingInputs = this.pendingInputs.filter(item => item.seq > serverLastAckSeq);
+  public ping() {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    this.lastPingSentTime = performance.now();
+    this.ws.send(JSON.stringify({ type: 'PING' }));
+  }
 
-    const driftDist = Math.hypot(
+  public reconcile(serverLastAckSeq: number, serverPos: [number, number, number], currentPos: [number, number, number]) {
+    this.acknowledge(serverLastAckSeq);
+    const drift = Math.hypot(
       currentPos[0] - serverPos[0],
       currentPos[1] - serverPos[1],
-      currentPos[2] - serverPos[2]
+      currentPos[2] - serverPos[2],
     );
 
-    // If drift is significant (>0.15m), smoothly reconcile
-    if (driftDist > 0.15) {
-      return [
-        THREE_LERP(currentPos[0], serverPos[0], 0.25),
-        THREE_LERP(currentPos[1], serverPos[1], 0.25),
-        THREE_LERP(currentPos[2], serverPos[2], 0.25),
-      ];
-    }
-
-    return currentPos;
+    if (drift < 0.08) return currentPos;
+    const alpha = drift > 1.0 ? 1 : 0.35;
+    return [
+      currentPos[0] + (serverPos[0] - currentPos[0]) * alpha,
+      currentPos[1] + (serverPos[1] - currentPos[1]) * alpha,
+      currentPos[2] + (serverPos[2] - currentPos[2]) * alpha,
+    ] as [number, number, number];
   }
-}
-
-function THREE_LERP(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
 }
 
 export const netcodeManager = new NetcodeManager();
