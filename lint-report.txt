@@ -1,0 +1,3 @@
+$ tsc --noEmit
+src/engine/voxelEngine.ts(481,56): error TS2339: Property 'SAND' does not exist on type '{ readonly AIR: 0; readonly CONCRETE: 1; readonly WOOD: 2; readonly METAL: 3; readonly BRICK: 4; }'.
+error: script "lint" exited with code 1
