@@ -235,46 +235,33 @@ setInterval(() => {
 
   if (clients.size === 0) return;
 
-  for (const room of rooms.list()) {
-    void room;
-  }
-
   for (const client of clients.values()) {
     if (client.ws.readyState !== WebSocket.OPEN) continue;
     const roomPlayers = Array.from(clients.values()).filter(peer => peer.roomId === client.roomId);
     const players = roomPlayers.map(c => ({
-    id: c.id,
-    name: c.name,
-    position: c.state.position,
-    velocity: c.state.velocity,
-    yaw: c.input.yaw,
-    pitch: c.input.pitch,
-    health: c.state.health,
-    maxHealth: 100,
-    armor: c.state.armor,
-    maxArmor: 150,
-    stateFlags: 0,
-    currentWeaponId: c.state.weaponId,
-    ammoInClip: c.state.ammoInClip,
-    reserveAmmo: c.state.reserveAmmo,
-    kills: c.state.kills,
-    deaths: c.state.deaths,
-    score: c.state.score,
-    ping: 0,
-    team: c.team,
-    isLocal: false,
-    ackSeq: c.lastAckSeq,
-  }));
-
-  for (const client of clients.values()) {
-    if (client.ws.readyState !== WebSocket.OPEN) continue;
-    const snapshot = {
-      type: 'SNAPSHOT',
-      tick: serverTick,
-      players,
-    };
-    client.ws.send(JSON.stringify(snapshot));
-  }
+      id: c.id,
+      name: c.name,
+      position: c.state.position,
+      velocity: c.state.velocity,
+      yaw: c.input.yaw,
+      pitch: c.input.pitch,
+      health: c.state.health,
+      maxHealth: 100,
+      armor: c.state.armor,
+      maxArmor: 150,
+      stateFlags: 0,
+      currentWeaponId: c.state.weaponId,
+      ammoInClip: c.state.ammoInClip,
+      reserveAmmo: c.state.reserveAmmo,
+      kills: c.state.kills,
+      deaths: c.state.deaths,
+      score: c.state.score,
+      ping: 0,
+      team: c.team,
+      isLocal: c.id === client.id,
+      ackSeq: c.lastAckSeq,
+    }));
+    client.ws.send(JSON.stringify({ type: 'SNAPSHOT', tick: serverTick, players }));
   }
 }, 1000 / 30);
 
