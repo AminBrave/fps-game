@@ -15,6 +15,8 @@ import { BotManager, BotInstance } from './engine/botAI';
 import { netcodeManager } from './engine/netcode';
 import { BallisticsEngine } from './engine/ballistics';
 import { WeaponFXManager } from './engine/weaponFX';
+import { createViewmodelRig, attachViewmodel, syncViewmodelCamera, findMuzzleSocket, getSocketWorldPosition, ViewmodelRig } from './engine/viewmodel';
+import { WeatherSystem, WeatherPresetId } from './engine/weather';
 import {
   PlayerInput,
   PlayerState,
@@ -98,6 +100,7 @@ export default function App() {
   const [playersList, setPlayersList] = useState<PlayerState[]>([]);
   const [matchScore, setMatchScore] = useState({ specOps: 0, shadowCompany: 0 });
   const [leaderboardRecords, setLeaderboardRecords] = useState<LeaderboardRecord[]>([]);
+  const [roomSummaries, setRoomSummaries] = useState<Array<{id:string; map:string; weather:string; botCount:number; maxPlayers:number; playerCount:number}>>([]);
 
   // User Settings
   const [settings, setSettings] = useState<GameSettings>({
@@ -130,6 +133,8 @@ export default function App() {
   const turntableWeaponRef = useRef<THREE.Group | null>(null);
   const ballisticsEngineRef = useRef<BallisticsEngine | null>(null);
   const weaponFXRef = useRef<WeaponFXManager | null>(null);
+  const viewmodelRigRef = useRef<ViewmodelRig | null>(null);
+  const weatherRef = useRef<WeatherSystem | null>(null);
 
   // Fast Mutable Loop State
   const gameStateRef = useRef({
@@ -190,6 +195,8 @@ export default function App() {
         local.ackSeq ?? 0,
         local.position,
         [g.pos.x, g.pos.y, g.pos.z],
+        local.velocity,
+        true,
       );
       g.pos.set(corrected[0], corrected[1], corrected[2]);
       g.vel.set(local.velocity[0], local.velocity[1], local.velocity[2]);
@@ -260,7 +267,7 @@ export default function App() {
       }
       const fpMesh = createWeaponMesh(currentWeapon, camo, false);
       weaponMeshRef.current = fpMesh;
-      cameraRef.current.add(fpMesh);
+      if (viewmodelRigRef.current) attachViewmodel(viewmodelRigRef.current, fpMesh);
     }
 
     // Spawn bot roster
@@ -289,7 +296,10 @@ export default function App() {
 
     // Remove First-Person Viewmodel weapon
     if (weaponMeshRef.current && cameraRef.current) {
-      cameraRef.current.remove(weaponMeshRef.current);
+      if (viewmodelRigRef.current?.weaponRoot === weaponMeshRef.current) {
+        viewmodelRigRef.current.scene.remove(weaponMeshRef.current);
+        viewmodelRigRef.current.weaponRoot = null;
+      }
       weaponMeshRef.current = null;
     }
 
@@ -443,10 +453,10 @@ export default function App() {
     setIsReloading(false);
 
     if (g.gameMode === 'playing' && cameraRef.current && weaponMeshRef.current) {
-      cameraRef.current.remove(weaponMeshRef.current);
+      if (viewmodelRigRef.current?.weaponRoot === weaponMeshRef.current) viewmodelRigRef.current.scene.remove(weaponMeshRef.current);
       const newMesh = createWeaponMesh(weapon, camo, false);
       weaponMeshRef.current = newMesh;
-      cameraRef.current.add(newMesh);
+      if (viewmodelRigRef.current) attachViewmodel(viewmodelRigRef.current, newMesh);
     }
   }, [camo]);
 
@@ -512,6 +522,9 @@ export default function App() {
     mount.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    const viewmodelRig = createViewmodelRig(window.innerWidth, window.innerHeight);
+    viewmodelRigRef.current = viewmodelRig;
+
     // 3. Tactical Military PBR Lighting
     const ambientLight = new THREE.AmbientLight(0xd4e2ed, 0.45);
     scene.add(ambientLight);
@@ -549,6 +562,9 @@ export default function App() {
     // Weapon FX Engine & Particle Pools
     const weaponFX = new WeaponFXManager(scene, camera);
     weaponFXRef.current = weaponFX;
+    const weather = new WeatherSystem(scene);
+    weatherRef.current = weather;
+    weather.setPreset('urban_clear');
 
     // Material-Based Ballistic Ray-Marcher
     const ballisticsEngine = new BallisticsEngine(voxelEngine, weaponFX);
@@ -685,9 +701,9 @@ export default function App() {
 
       // 4. Peak-Leaning (Q / E)
       if (g.keys.KeyQ && !g.keys.KeyE) {
-        g.targetLeanAngle = 0.24;
-      } else if (g.keys.KeyE && !g.keys.KeyQ) {
         g.targetLeanAngle = -0.24;
+      } else if (g.keys.KeyE && !g.keys.KeyQ) {
+        g.targetLeanAngle = 0.24;
       } else {
         g.targetLeanAngle = 0;
       }
@@ -844,16 +860,13 @@ export default function App() {
         const aimDir = new THREE.Vector3();
         camera.getWorldDirection(aimDir);
 
-        const muzzleOffset = getWeaponMuzzleOffset(currentWeaponRef.current);
+        const muzzleSocket = weaponMeshRef.current ? findMuzzleSocket(weaponMeshRef.current) : null;
+        const muzzleWorld = muzzleSocket
+          ? getSocketWorldPosition(muzzleSocket, camera)
+          : camera.position.clone().addScaledVector(aimDir, 0.45);
+
         const ejectionOffset = getWeaponEjectionOffset(currentWeaponRef.current);
-
-        const muzzleWorld = camera.position.clone()
-          .add(new THREE.Vector3(0, -0.05, 0))
-          .addScaledVector(aimDir, 0.45);
-
-        const ejectionWorld = camera.position.clone()
-          .add(new THREE.Vector3(0.12, -0.08, 0))
-          .addScaledVector(aimDir, 0.25);
+        const ejectionWorld = camera.position.clone().add(new THREE.Vector3(0.12, -0.08, 0)).addScaledVector(aimDir, 0.25);
 
         // Trigger Weapon FX: Point-Light Muzzle Flash, Brass Shell Ejection, Sparks & Viewmodel Recoil
         weaponFX.triggerMuzzleFX(muzzleWorld, ejectionWorld, aimDir, isSuppressed, 1.0);
@@ -953,6 +966,7 @@ export default function App() {
       }
 
       // 9. Update Subsystems
+      weatherRef.current?.update(dt, g.pos);
       if (matchSettingsRef.current.enableAirdrops) {
         airdropManager.update(dt);
         const openedDrop = airdropManager.checkInteraction(g.pos);
@@ -1012,8 +1026,11 @@ export default function App() {
       setPlayerYaw(g.yaw);
       setPlayerPos([g.pos.x, g.pos.y, g.pos.z]);
 
-      // Render Three.js Scene
+      // Render world first, then the isolated viewmodel depth pass.
+      syncViewmodelCamera(viewmodelRig, camera);
       renderer.render(scene, camera);
+      renderer.clearDepth();
+      renderer.render(viewmodelRig.scene, viewmodelRig.camera);
     };
 
     animationFrameId = requestAnimationFrame(tick);
@@ -1022,6 +1039,9 @@ export default function App() {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
+      viewmodelRig.scene.traverse(o => { if (o instanceof THREE.Mesh) { o.geometry.dispose(); if (Array.isArray(o.material)) o.material.forEach(m=>m.dispose()); else o.material.dispose(); } });
+      viewmodelRigRef.current = null;
+      weatherRef.current = null;
       if (mount && renderer.domElement) {
         mount.removeChild(renderer.domElement);
       }
