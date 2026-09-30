@@ -1,0 +1,32 @@
+name: Temporary TypeScript Diagnostics
+
+on:
+  push:
+    branches: ["overhaul/**"]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.20"
+      - run: bun install --frozen-lockfile
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const { exitCode, stdout, stderr } = await exec.getExecOutput('bun', ['run', 'lint'], { ignoreReturnCode: true });
+            const output = [stdout, stderr].filter(Boolean).join('\\n');
+            console.log(output);
+            const number = context.payload.pull_request?.number;
+            if (number) {
+              const fence = String.fromCharCode(96).repeat(3);
+              await github.rest.issues.createComment({ owner: context.repo.owner, repo: context.repo.repo, issue_number: number, body: '### Temporary TypeScript diagnostics\\n\\n' + fence + 'text\\n' + output.slice(-12000) + '\\n' + fence });
+            }
+            if (exitCode !== 0) core.setFailed('TypeScript lint failed.');
