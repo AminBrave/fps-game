@@ -469,6 +469,31 @@ export class VoxelEngine {
    * Warehouse perimeter, central tactical breaching rooms, sandbag clusters,
    * elevated catwalks, and breachable concrete/plywood walls.
    */
+  public generateMapPreset(id: 'urban_industrial' | 'desert_outpost' | 'night_operations') {
+    // Geometry is shared at the voxel layer; the preset changes traversal density and
+    // cover dressing without creating a second renderer/world implementation.
+    this.generateKillhouseCompound();
+    if (id === 'desert_outpost') {
+      for (let x = -42; x <= 42; x += 6) {
+        for (let z = -42; z <= 42; z += 6) {
+          if (Math.abs(x) < 12 && Math.abs(z) < 12) continue;
+          this.setVoxelAtWorld(x, 0.5, z, VOXEL_TYPES.SAND);
+          this.setVoxelAtWorld(x, 0.75, z, VOXEL_TYPES.SAND);
+        }
+      }
+    } else if (id === 'night_operations') {
+      // Night geometry favors tighter lanes and artificial-light cover positions.
+      for (let x = -36; x <= 36; x += 12) {
+        for (let z = -36; z <= 36; z += 12) {
+          for (let y = 0.25; y <= 1.25; y += VOXEL_SIZE) {
+            this.setVoxelAtWorld(x, y, z, VOXEL_TYPES.CONCRETE);
+          }
+        }
+      }
+    }
+    for (const chunk of this.chunks.values()) this.updateChunkMesh(chunk);
+  }
+
   public generateKillhouseCompound() {
     // 1. Expanded 96m x 96m tactical perimeter with vertical and subterranean routes.
     for (let x = -48; x <= 48; x += VOXEL_SIZE) {
