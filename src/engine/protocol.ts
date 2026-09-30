@@ -67,7 +67,7 @@ export class BinaryProtocol {
     return buffer;
   }
 
-  static unpackClientInput(buffer: ArrayBuffer): UnpackedClientInput | null {
+  static unpackClientInput(buffer: ArrayBufferLike): UnpackedClientInput | null {
     if (buffer.byteLength < BinaryProtocol.CLIENT_INPUT_BYTES) return null;
     const view = new DataView(buffer);
     if (view.getUint8(0) !== PACKET_TYPES.CLIENT_INPUT) return null;
@@ -103,7 +103,7 @@ export class BinaryProtocol {
     return buffer;
   }
 
-  static unpackVoxelDelta(buffer: ArrayBuffer) {
+  static unpackVoxelDelta(buffer: ArrayBufferLike) {
     if (buffer.byteLength < 12) return null;
     const view = new DataView(buffer);
     if (view.getUint8(0) !== PACKET_TYPES.VOXEL_DESTRUCTION) return null;
