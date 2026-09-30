@@ -9,7 +9,7 @@ export class RoomManager {
 
   create(hostId:string, config:Omit<RoomConfig,'id'|'hostId'|'createdAt'>):RoomSummary {
     const room:RoomConfig={id:randomRoomId(),hostId,createdAt:Date.now(),...config};
-    this.rooms.set(room.id,room); this.members.set(room.id,new Set([hostId]));
+    this.rooms.set(room.id,room); this.members.set(room.id,new Set());
     return this.summary(room.id)!;
   }
   join(roomId:string,playerId:string):RoomSummary|null {
