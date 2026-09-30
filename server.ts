@@ -4,28 +4,23 @@ import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { BinaryProtocol, PACKET_TYPES } from './src/engine/protocol';
+import { FIXED_DT, inputFlagsToPlayerInput, simulatePlayer } from './src/engine/simulation';
+import { PlayerInput } from './src/engine/types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 const app = express();
 const server = createServer(app);
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT || 3000);
 const isProduction = process.env.NODE_ENV === 'production';
 
-app.use(express.json());
+app.disable('x-powered-by');
+app.use(express.json({ limit: '16kb' }));
 
-// In-Memory Leaderboard Database
 interface ServerLeaderboardRecord {
-  id: string;
-  name: string;
-  elo: number;
-  kills: number;
-  deaths: number;
-  kdRatio: number;
-  matchesPlayed: number;
-  wins: number;
-  lastActive: string;
+  id: string; name: string; elo: number; kills: number; deaths: number;
+  kdRatio: number; matchesPlayed: number; wins: number; lastActive: string;
 }
 
 const LEADERBOARD_DATA: ServerLeaderboardRecord[] = [
@@ -37,201 +32,236 @@ const LEADERBOARD_DATA: ServerLeaderboardRecord[] = [
   { id: '6', name: 'Alejandro_Vargas', elo: 1720, kills: 560, deaths: 390, kdRatio: 1.43, matchesPlayed: 40, wins: 24, lastActive: '2h ago' },
 ];
 
-// --- REST Endpoints ---
-app.get('/api/health', (req: Request, res: Response) => {
-  res.json({ status: 'ok', matchServer: 'BreachPoint Authoritative Node', tickRate: 30 });
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.json({ status: 'ok', matchServer: 'BreachPoint Authoritative Node', tickRate: 30, players: clients.size });
 });
 
-app.get('/api/leaderboard', (req: Request, res: Response) => {
-  res.json(LEADERBOARD_DATA);
-});
+app.get('/api/leaderboard', (_req: Request, res: Response) => res.json(LEADERBOARD_DATA));
 
 app.post('/api/auth/token', (req: Request, res: Response) => {
-  const { username } = req.body || { username: 'Operator_' + Math.floor(Math.random() * 1000) };
+  const raw = typeof req.body?.username === 'string' ? req.body.username : '';
+  const username = raw.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24) || `Operator_${Math.floor(Math.random() * 1000)}`;
+  // Development session identifier only; this is deliberately not presented as a JWT.
   res.json({
-    token: `jwt_bp_${Date.now()}_${Math.random().toString(36).substring(2)}`,
+    token: `dev_session_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
     user: { id: `usr_${Date.now()}`, name: username, elo: 1500 },
   });
 });
-
-// --- WebSocket Authoritative Match Server ---
-const wss = new WebSocketServer({ server, path: '/ws' });
 
 interface ConnectedClient {
   ws: WebSocket;
   id: string;
   name: string;
-  posX: number;
-  posY: number;
-  posZ: number;
-  yaw: number;
-  pitch: number;
+  state: ReturnType<typeof createInitialState>;
+  input: PlayerInput;
   lastAckSeq: number;
-  health: number;
-  armor: number;
-  score: number;
-  kills: number;
-  deaths: number;
   team: 'spec_ops' | 'shadow_company';
-  lastPingTime: number;
+  messagesThisSecond: number;
+  messageWindowStart: number;
 }
 
-const clients = new Map<string, ConnectedClient>();
-
-wss.on('connection', (ws: WebSocket) => {
-  const clientId = `client_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-  const team = clients.size % 2 === 0 ? 'spec_ops' : 'shadow_company';
-
-  const client: ConnectedClient = {
-    ws,
-    id: clientId,
-    name: `Operator_${clientId.substring(14)}`,
-    posX: (Math.random() - 0.5) * 20,
-    posY: 1.0,
-    posZ: (Math.random() - 0.5) * 20,
-    yaw: 0,
-    pitch: 0,
-    lastAckSeq: 0,
+function createInitialState() {
+  return {
+    position: [
+      (Math.random() - 0.5) * 20,
+      1.7,
+      (Math.random() - 0.5) * 20,
+    ] as [number, number, number],
+    velocity: [0, 0, 0] as [number, number, number],
+    grounded: true,
     health: 100,
-    armor: 100,
+    armor: 150,
     score: 0,
     kills: 0,
     deaths: 0,
-    team,
-    lastPingTime: Date.now(),
+    weaponId: 'm4a1',
+    ammoInClip: 30,
+    reserveAmmo: 180,
   };
+}
 
+function createNeutralInput(seq = 0): PlayerInput {
+  return {
+    seq, dt: FIXED_DT, forward: false, backward: false, left: false, right: false,
+    jump: false, crouch: false, slide: false, tacSprint: false, ads: false,
+    fire: false, reload: false, leanLeft: false, leanRight: false,
+    yaw: 0, pitch: 0, weaponIndex: 0,
+  };
+}
+
+function isNewerSequence(next: number, previous: number) {
+  const delta = (next - previous + 0x10000) & 0xffff;
+  return delta > 0 && delta < 0x8000;
+}
+
+const clients = new Map<string, ConnectedClient>();
+const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 });
+
+wss.on('connection', (ws) => {
+  const clientId = `client_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const client: ConnectedClient = {
+    ws,
+    id: clientId,
+    name: `Operator_${clientId.slice(-4)}`,
+    state: createInitialState(),
+    input: createNeutralInput(),
+    lastAckSeq: 0,
+    team: clients.size % 2 === 0 ? 'spec_ops' : 'shadow_company',
+    messagesThisSecond: 0,
+    messageWindowStart: Date.now(),
+  };
   clients.set(clientId, client);
 
-  // Send initialization info
-  ws.send(JSON.stringify({
-    type: 'INIT',
-    clientId,
-    team,
-    message: 'Connected to BreachPoint Authoritative Server',
-  }));
+  ws.send(JSON.stringify({ type: 'INIT', clientId, team: client.team, tickRate: 30 }));
 
-  ws.on('message', (message: any) => {
-    if (Buffer.isBuffer(message) || message instanceof ArrayBuffer) {
-      const view = Buffer.isBuffer(message)
-        ? new DataView(message.buffer, message.byteOffset, message.byteLength)
-        : new DataView(message);
-      const byteLength = Buffer.isBuffer(message) ? message.byteLength : message.byteLength;
-      const packetType = view.getUint8(0);
+  ws.on('message', (raw) => {
+    if (Buffer.isBuffer(raw)) {
+      const packet = raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+      const view = new DataView(packet);
+      if (view.byteLength === 0) return;
+      const type = view.getUint8(0);
 
-      // PacketType 1: Movement Input (24 bytes)
-      if (packetType === 1 && byteLength >= 24) {
-        const seq = view.getUint16(2, true);
-        const x = view.getInt16(8, true) / 100;
-        const y = view.getInt16(10, true) / 100;
-        const z = view.getInt16(12, true) / 100;
-        const yaw = (view.getInt16(14, true) / 32767) * Math.PI;
-        const pitch = (view.getInt16(16, true) / 32767) * (Math.PI / 2);
+      if (type === PACKET_TYPES.CLIENT_INPUT) {
+        const decoded = BinaryProtocol.unpackClientInput(packet);
+        if (!decoded || !isNewerSequence(decoded.seq, client.lastAckSeq)) return;
 
-        // Basic anti-cheat speed sanity check
-        const maxMoveStep = 3.0;
-        const dist = Math.hypot(x - client.posX, z - client.posZ);
-        if (dist <= maxMoveStep) {
-          client.posX = x;
-          client.posY = y;
-          client.posZ = z;
-        }
-
-        client.yaw = yaw;
-        client.pitch = pitch;
-        client.lastAckSeq = seq;
+        // The position fields in the packet are intentionally ignored.
+        // The server advances simulation from input only.
+        const safeDt = Math.max(0, Math.min(decoded.dt, 0.1));
+        client.input = inputFlagsToPlayerInput(
+          decoded.flags,
+          decoded.seq,
+          safeDt || FIXED_DT,
+          decoded.yaw,
+          decoded.pitch,
+          decoded.weaponIndex,
+        );
+        client.lastAckSeq = decoded.seq;
       }
-      // PacketType 3: Voxel Destruction Delta
-      else if (packetType === 3) {
-        // Broadcast destruction delta to all other clients
-        for (const [id, peer] of clients.entries()) {
-          if (id !== clientId && peer.ws.readyState === WebSocket.OPEN) {
-            peer.ws.send(message);
-          }
+
+      // Client-originated voxel mutation packets are rejected. A future server
+      // weapon simulation will validate and create destruction events here.
+      return;
+    }
+
+    const now = Date.now();
+    if (now - client.messageWindowStart >= 1000) {
+      client.messageWindowStart = now;
+      client.messagesThisSecond = 0;
+    }
+    client.messagesThisSecond++;
+    if (client.messagesThisSecond > 12) return;
+
+    try {
+      const data = JSON.parse(raw.toString());
+      if (data.type === 'PING') {
+        ws.send(JSON.stringify({ type: 'PONG', time: Date.now() }));
+      } else if (data.type === 'CHAT' && typeof data.text === 'string') {
+        const text = data.text.replace(/[\\u0000-\\u001f\\u007f]/g, '').trim().slice(0, 200);
+        if (!text) return;
+        const chat = JSON.stringify({ type: 'CHAT', sender: client.name, text });
+        for (const peer of clients.values()) {
+          if (peer.ws.readyState === WebSocket.OPEN) peer.ws.send(chat);
         }
       }
-    } else {
-      try {
-        const data = JSON.parse(message.toString());
-        if (data.type === 'PING') {
-          ws.send(JSON.stringify({ type: 'PONG', time: Date.now() }));
-        } else if (data.type === 'CHAT') {
-          // Broadcast chat to all clients
-          const chatMsg = JSON.stringify({ type: 'CHAT', sender: client.name, text: data.text });
-          for (const peer of clients.values()) {
-            if (peer.ws.readyState === WebSocket.OPEN) {
-              peer.ws.send(chatMsg);
-            }
-          }
-        }
-      } catch {
-        // ignore malformed
-      }
+    } catch {
+      // Ignore malformed application messages.
     }
   });
 
-  ws.on('close', () => {
-    clients.delete(clientId);
-  });
+  ws.on('close', () => clients.delete(clientId));
+  ws.on('error', () => clients.delete(clientId));
 });
 
-// Authoritative Match Tick Loop (30Hz)
 let serverTick = 0;
-setInterval(() => {
+let lastTickTime = performance.now();
+
+function simulateServerTick(dt: number) {
   serverTick++;
+  for (const client of clients.values()) {
+    client.state = {
+      ...client.state,
+      ...simulatePlayer(
+        {
+          position: client.state.position,
+          velocity: client.state.velocity,
+          grounded: client.state.grounded,
+        },
+        client.input,
+        dt,
+      ),
+    };
+  }
+}
+
+setInterval(() => {
+  const now = performance.now();
+  const elapsed = Math.min(0.25, (now - lastTickTime) / 1000);
+  lastTickTime = now;
+
+  // Fixed-step server simulation. Never trust client-provided frame time.
+  let remaining = elapsed;
+  while (remaining >= FIXED_DT) {
+    simulateServerTick(FIXED_DT);
+    remaining -= FIXED_DT;
+  }
+
   if (clients.size === 0) return;
 
-  const snapshot = {
-    type: 'SNAPSHOT',
-    tick: serverTick,
-    players: Array.from(clients.values()).map(c => ({
-      id: c.id,
-      name: c.name,
-      position: [c.posX, c.posY, c.posZ],
-      yaw: c.yaw,
-      pitch: c.pitch,
-      health: c.health,
-      armor: c.armor,
-      score: c.score,
-      kills: c.kills,
-      deaths: c.deaths,
-      team: c.team,
-      isLocal: false,
-    })),
-  };
+  const players = Array.from(clients.values()).map(c => ({
+    id: c.id,
+    name: c.name,
+    position: c.state.position,
+    velocity: c.state.velocity,
+    yaw: c.input.yaw,
+    pitch: c.input.pitch,
+    health: c.state.health,
+    maxHealth: 100,
+    armor: c.state.armor,
+    maxArmor: 150,
+    stateFlags: 0,
+    currentWeaponId: c.state.weaponId,
+    ammoInClip: c.state.ammoInClip,
+    reserveAmmo: c.state.reserveAmmo,
+    kills: c.state.kills,
+    deaths: c.state.deaths,
+    score: c.state.score,
+    ping: 0,
+    team: c.team,
+    isLocal: false,
+    ackSeq: c.lastAckSeq,
+  }));
 
-  const payload = JSON.stringify(snapshot);
   for (const client of clients.values()) {
-    if (client.ws.readyState === WebSocket.OPEN) {
-      client.ws.send(payload);
-    }
+    if (client.ws.readyState !== WebSocket.OPEN) continue;
+    const snapshot = {
+      type: 'SNAPSHOT',
+      tick: serverTick,
+      players,
+    };
+    client.ws.send(JSON.stringify(snapshot));
   }
 }, 1000 / 30);
 
-// --- Vite / Static Files Mounting ---
 async function startServer() {
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: 'spa',
-    });
+    const vite = await createViteServer({ server: { middlewareMode: true }, appType: 'spa' });
     app.use(vite.middlewares);
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     if (fs.existsSync(distPath)) {
       app.use(express.static(distPath));
-      app.get('*', (req, res) => {
-        res.sendFile(path.resolve(distPath, 'index.html'));
-      });
+      app.get('*', (_req, res) => res.sendFile(path.resolve(distPath, 'index.html')));
     }
   }
 
   server.listen(PORT, () => {
-    console.log(`[BreachPoint] Match Server listening on port ${PORT} (prod=${isProduction})`);
+    console.log(`[BreachPoint] Authoritative server listening on :${PORT} (prod=${isProduction})`);
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start BreachPoint server:', err);
+startServer().catch(err => {
+  console.error('[BreachPoint] Fatal startup error:', err);
+  process.exitCode = 1;
 });
