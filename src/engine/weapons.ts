@@ -393,6 +393,13 @@ export function createWeaponMesh(
     root.add(warhead);
   }
 
+  // Authoritative muzzle attachment point. FX code resolves this node after all
+  // weapon/viewmodel transforms, so ADS, recoil, inspect, and attachment changes stay aligned.
+  const muzzleSocket = new THREE.Object3D();
+  muzzleSocket.name = 'Muzzle_Socket';
+  muzzleSocket.position.copy(getWeaponMuzzleOffset(config));
+  root.add(muzzleSocket);
+
   // Positioning
   if (isTurntable) {
     root.position.set(0, 0, 0);
