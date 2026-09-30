@@ -1,0 +1,7 @@
+$ tsc --noEmit
+src/engine/ballistics.ts(45,11): error TS2451: Cannot redeclare block-scoped variable 'currPos'.
+src/engine/ballistics.ts(78,9): error TS2451: Cannot redeclare block-scoped variable 'currPos'.
+src/engine/ballistics.ts(87,26): error TS2304: Cannot find name 'maxRange'.
+src/engine/ballistics.ts(119,28): error TS2304: Cannot find name 'maxRange'.
+src/engine/ballistics.ts(120,42): error TS2304: Cannot find name 'maxRange'.
+error: script "lint" exited with code 1
