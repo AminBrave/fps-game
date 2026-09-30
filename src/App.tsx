@@ -110,6 +110,14 @@ export default function App() {
   });
 
   // Engine Subsystem References
+  const settingsRef = useRef(settings);
+  const matchSettingsRef = useRef(matchSettings);
+  const currentWeaponRef = useRef(currentWeapon);
+  const lastNetworkSendRef = useRef(0);
+  settingsRef.current = settings;
+  matchSettingsRef.current = matchSettings;
+  currentWeaponRef.current = currentWeapon;
+
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -168,6 +176,24 @@ export default function App() {
     deaths: 0,
     footstepTimer: 0,
   });
+
+  // Authoritative network reconciliation. Rendering remains client-side, but
+  // the server owns the canonical player position and acknowledges input sequence.
+  useEffect(() => {
+    netcodeManager.connect();
+    netcodeManager.onServerSnapshot = (_players, _tick, local) => {
+      if (!local) return;
+      const g = gameStateRef.current;
+      const corrected = netcodeManager.reconcile(
+        local.ackSeq ?? 0,
+        local.position,
+        [g.pos.x, g.pos.y, g.pos.z],
+      );
+      g.pos.set(corrected[0], corrected[1], corrected[2]);
+      g.vel.set(local.velocity[0], local.velocity[1], local.velocity[2]);
+    };
+    return () => { netcodeManager.onServerSnapshot = undefined; };
+  }, []);
 
   // Fetch initial leaderboard records
   useEffect(() => {
@@ -463,12 +489,12 @@ export default function App() {
     // 1. Scene & Camera Setup
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0c0e12);
-    if (matchSettings.volumetricFog) {
+    if (matchSettingsRef.current.volumetricFog) {
       scene.fog = new THREE.FogExp2(0x0c0e12, 0.016);
     }
     sceneRef.current = scene;
 
-    const camera = new THREE.PerspectiveCamera(settings.fov, window.innerWidth / window.innerHeight, 0.05, 500);
+    const camera = new THREE.PerspectiveCamera(settingsRef.current.fov, window.innerWidth / window.innerHeight, 0.05, 500);
     camera.rotation.order = 'YXZ';
     cameraRef.current = camera;
     scene.add(camera);
@@ -477,7 +503,7 @@ export default function App() {
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
-    renderer.shadowMap.enabled = matchSettings.shadowQuality !== 'low';
+    renderer.shadowMap.enabled = matchSettingsRef.current.shadowQuality !== 'low';
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
@@ -490,8 +516,8 @@ export default function App() {
 
     const dirLight = new THREE.DirectionalLight(0xfff5e0, 1.35);
     dirLight.position.set(20, 45, 25);
-    dirLight.castShadow = matchSettings.shadowQuality !== 'low';
-    const shadowRes = matchSettings.shadowQuality === 'high' ? 2048 : 1024;
+    dirLight.castShadow = matchSettingsRef.current.shadowQuality !== 'low';
+    const shadowRes = matchSettingsRef.current.shadowQuality === 'high' ? 2048 : 1024;
     dirLight.shadow.mapSize.width = shadowRes;
     dirLight.shadow.mapSize.height = shadowRes;
     dirLight.shadow.camera.near = 0.5;
@@ -544,7 +570,7 @@ export default function App() {
     renderer.compile(scene, camera);
 
     // Spawn initial turntable weapon in staging lobby
-    const initialTableMesh = createWeaponMesh(currentWeapon, camo, true);
+    const initialTableMesh = createWeaponMesh(currentWeaponRef.current, camo, true);
     turntableWeaponRef.current = initialTableMesh;
     scene.add(initialTableMesh);
 
@@ -637,7 +663,7 @@ export default function App() {
       g.adsAlpha = THREE.MathUtils.lerp(g.adsAlpha, adsTarget, dt * 14.0);
 
       // Smooth ADS FOV zoom
-      const targetFov = THREE.MathUtils.lerp(settings.fov, currentWeapon.adsFov, g.adsAlpha);
+      const targetFov = THREE.MathUtils.lerp(settingsRef.current.fov, currentWeaponRef.current.adsFov, g.adsAlpha);
       if (Math.abs(camera.fov - targetFov) > 0.05) {
         camera.fov = targetFov;
         camera.updateProjectionMatrix();
@@ -675,6 +701,34 @@ export default function App() {
 
       // Transform by Player Yaw
       moveVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), g.yaw);
+
+      // Send compact input samples at 20Hz. The server ignores the pose fields
+      // and advances its own simulation from these inputs.
+      const networkNow = performance.now();
+      if (networkNow - lastNetworkSendRef.current >= 50) {
+        const input: PlayerInput = {
+          seq: netcodeManager.getSequence(),
+          dt,
+          forward: g.keys.KeyW,
+          backward: g.keys.KeyS,
+          left: g.keys.KeyA,
+          right: g.keys.KeyD,
+          jump: g.keys.Space,
+          crouch: g.keys.KeyC,
+          slide: g.isSliding,
+          tacSprint: wantsSprint,
+          ads: g.isADS,
+          fire: g.mouseButtons.left,
+          reload: g.isReloading,
+          leanLeft: g.keys.KeyQ,
+          leanRight: g.keys.KeyE,
+          yaw: g.yaw,
+          pitch: g.pitch,
+          weaponIndex: 0,
+        };
+        netcodeManager.sendInput(input, g.pos.x, g.pos.y, g.pos.z);
+        lastNetworkSendRef.current = networkNow;
+      }
 
       // Movement Speeds
       let speed = 4.8;
@@ -740,19 +794,19 @@ export default function App() {
       camera.rotation.z = -g.leanAngle;
 
       // 6. Recoil Spring Recovery
-      g.recoilPitch = THREE.MathUtils.lerp(g.recoilPitch, 0, dt * currentWeapon.recoilRecoveryRate);
-      g.recoilYaw = THREE.MathUtils.lerp(g.recoilYaw, 0, dt * currentWeapon.recoilRecoveryRate);
+      g.recoilPitch = THREE.MathUtils.lerp(g.recoilPitch, 0, dt * currentWeaponRef.current.recoilRecoveryRate);
+      g.recoilYaw = THREE.MathUtils.lerp(g.recoilYaw, 0, dt * currentWeaponRef.current.recoilRecoveryRate);
 
       // Reload timer
       if (g.isReloading) {
         g.reloadTimer -= dt;
-        const progress = 1 - Math.max(0, g.reloadTimer) / currentWeapon.reloadTime;
+        const progress = 1 - Math.max(0, g.reloadTimer) / currentWeaponRef.current.reloadTime;
         setReloadProgress(progress);
 
         if (g.reloadTimer <= 0) {
           g.isReloading = false;
           setIsReloading(false);
-          const needed = currentWeapon.magSize - g.ammoInClip;
+          const needed = currentWeaponRef.current.magSize - g.ammoInClip;
           const toAdd = Math.min(needed, g.reserveAmmo);
           g.ammoInClip += toAdd;
           g.reserveAmmo -= toAdd;
@@ -767,29 +821,29 @@ export default function App() {
         g.fireTimer <= 0 &&
         !g.isReloading &&
         g.ammoInClip > 0 &&
-        (currentWeapon.automatic ? g.mouseButtons.left : g.mouseButtons.left && !isFiringState);
+        (currentWeaponRef.current.automatic ? g.mouseButtons.left : g.mouseButtons.left && !isFiringState);
 
       if (canFire) {
         g.ammoInClip--;
         setAmmoInClip(g.ammoInClip);
-        g.fireTimer = 60 / currentWeapon.fireRateRPM;
+        g.fireTimer = 60 / currentWeaponRef.current.fireRateRPM;
         setIsFiringState(true);
 
-        const isSuppressed = currentWeapon.attachments.barrel === 'tactical_suppressor';
+        const isSuppressed = currentWeaponRef.current.attachments.barrel === 'tactical_suppressor';
 
         // Play authentic weapon firing sound
-        soundEngine.playGunshot(currentWeapon.category, isSuppressed);
+        soundEngine.playGunshot(currentWeaponRef.current.category, isSuppressed);
 
         // Apply camera recoil
-        g.recoilPitch += currentWeapon.recoilPitch;
-        g.recoilYaw += (Math.random() - 0.5) * currentWeapon.recoilYawSpread;
+        g.recoilPitch += currentWeaponRef.current.recoilPitch;
+        g.recoilYaw += (Math.random() - 0.5) * currentWeaponRef.current.recoilYawSpread;
 
         // Compute Muzzle & Shell Ejection World Positions
         const aimDir = new THREE.Vector3();
         camera.getWorldDirection(aimDir);
 
-        const muzzleOffset = getWeaponMuzzleOffset(currentWeapon);
-        const ejectionOffset = getWeaponEjectionOffset(currentWeapon);
+        const muzzleOffset = getWeaponMuzzleOffset(currentWeaponRef.current);
+        const ejectionOffset = getWeaponEjectionOffset(currentWeaponRef.current);
 
         const muzzleWorld = camera.position.clone()
           .add(new THREE.Vector3(0, -0.05, 0))
@@ -821,8 +875,8 @@ export default function App() {
         const hitResult = ballisticsEngine.fireBullet(
           camera.position,
           aimDir,
-          currentWeapon,
-          matchSettings.enableBots ? botManager : null
+          currentWeaponRef.current,
+          matchSettingsRef.current.enableBots ? botManager : null
         );
 
         // Handle Bot Damage Feedback & Hitmarkers
@@ -837,7 +891,7 @@ export default function App() {
 
           soundEngine.playHitmarker(markerType);
 
-          if (matchSettings.enableHitmarkers) {
+          if (matchSettingsRef.current.enableHitmarkers) {
             setHitmarkers(prev => [
               ...prev.slice(-4),
               {
@@ -861,7 +915,7 @@ export default function App() {
                 id: `kill_${Date.now()}`,
                 killer: 'Operator (You)',
                 victim: hitResult.botHit!.state.name,
-                weapon: currentWeapon.name.split(' ')[0],
+                weapon: currentWeaponRef.current.name.split(' ')[0],
                 headshot: hitResult.isHeadshot,
                 wallbang: hitResult.wallbang,
                 timestamp: Date.now(),
@@ -897,7 +951,7 @@ export default function App() {
       }
 
       // 9. Update Subsystems
-      if (matchSettings.enableAirdrops) {
+      if (matchSettingsRef.current.enableAirdrops) {
         airdropManager.update(dt);
         const openedDrop = airdropManager.checkInteraction(g.pos);
         if (openedDrop) {
@@ -908,7 +962,7 @@ export default function App() {
         }
       }
 
-      if (matchSettings.enableBots) {
+      if (matchSettingsRef.current.enableBots) {
         botManager.update(dt, g.pos, (bot, targetPoint) => {
           // Bot firing at player
           const toPlayer = g.pos.clone().sub(bot.meshGroup.position);
@@ -970,7 +1024,16 @@ export default function App() {
         mount.removeChild(renderer.domElement);
       }
     };
-  }, [settings, camo, matchSettings]);
+  }, []);
+urn () => {
+      cancelAnimationFrame(animationFrameId);
+      window.removeEventListener('resize', handleResize);
+      renderer.dispose();
+      if (mount && renderer.domElement) {
+        mount.removeChild(renderer.domElement);
+      }
+    };
+  }, []);
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-black text-white select-none">
