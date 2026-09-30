@@ -25,6 +25,7 @@ export class NetcodeManager {
   private localClientId: string | null = null;
   private roomId: string | null = null;
   private readonly remoteSnapshots = new RemoteSnapshotStore();
+  private suppressReconnect = false;
 
   public onServerSnapshot?: (players: ServerPlayerSnapshot[], tick: number, local?: ServerPlayerSnapshot) => void;
   public onVoxelDestruction?: (delta: VoxelDelta) => void;
@@ -99,6 +100,7 @@ export class NetcodeManager {
       this.ws.onclose = () => {
         this.isConnected = false;
         this.onConnectionChanged?.(false);
+        if (this.suppressReconnect) { this.suppressReconnect = false; return; }
         if (this.reconnectTimer === null) {
           this.reconnectTimer = window.setTimeout(() => {
             this.reconnectTimer = null;
@@ -159,6 +161,7 @@ export class NetcodeManager {
       url.searchParams.set('room', roomId);
       window.history.replaceState({}, '', url);
     }
+    this.suppressReconnect = true;
     this.ws?.close();
     this.ws = null;
     this.connectWebSocket();
