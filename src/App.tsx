@@ -580,7 +580,7 @@ export default function App() {
 
     // 4. Instantiate Micro-Voxel World & Subsystems
     const voxelEngine = new VoxelEngine(scene);
-    voxelEngine.generateKillhouseCompound();
+    voxelEngine.generateMapPreset(matchSettingsRef.current.mapId);
     voxelEngineRef.current = voxelEngine;
 
     // Initial Physics Setup
