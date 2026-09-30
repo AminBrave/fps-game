@@ -64,6 +64,8 @@ export default function App() {
     particleDensity: 'high',
     volumetricFog: true,
     soundVolume: 0.85,
+    mapId: 'urban_industrial',
+    weather: 'urban_clear',
   });
 
   // UI Modal Overlays
@@ -987,6 +989,9 @@ export default function App() {
       }
 
       // 9. Update Subsystems
+      if (weatherRef.current && weatherRef.current.getPreset().id !== matchSettingsRef.current.weather) {
+        weatherRef.current.setPreset(matchSettingsRef.current.weather as WeatherPresetId);
+      }
       weatherRef.current?.update(dt, g.pos);
       if (matchSettingsRef.current.enableAirdrops) {
         airdropManager.update(dt);
