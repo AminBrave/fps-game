@@ -51,6 +51,9 @@ interface LobbyProps {
   matchSettings: MatchSettings;
   onUpdateMatchSettings: (settings: MatchSettings) => void;
   onDeployMatch: () => void;
+  rooms?: Array<{id:string; map:string; weather:string; botCount:number; maxPlayers:number; playerCount:number}>;
+  onCreateRoom?: () => void;
+  onJoinRoom?: (roomId:string) => void;
 }
 
 const CAMO_OPTIONS: { id: CamoType; name: string; color: string; desc: string }[] = [
@@ -71,6 +74,9 @@ export const Lobby: React.FC<LobbyProps> = ({
   matchSettings,
   onUpdateMatchSettings,
   onDeployMatch,
+  rooms = [],
+  onCreateRoom,
+  onJoinRoom,
 }) => {
   const [activeTab, setActiveTab] = useState<'gunsmith' | 'match_rules' | 'video_audio'>('gunsmith');
 
