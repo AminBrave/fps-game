@@ -8,7 +8,7 @@ export const SPRINT_SPEED = 8.5;
 export const ADS_SPEED = 2.4;
 export const CROUCH_SPEED = 2.2;
 export const JUMP_SPEED = 5.6;
-export const WORLD_LIMIT = 23;
+export const WORLD_LIMIT = 47;
 
 export interface SimulationState {
   position: [number, number, number];
@@ -24,7 +24,7 @@ export function simulatePlayer(state: SimulationState, input: PlayerInput, dt: n
     grounded: state.grounded,
   };
 
-  const moveX = (input.right ? -1 : 0) + (input.left ? 1 : 0);
+  const moveX = (input.right ? 1 : 0) + (input.left ? -1 : 0);
   const moveZ = (input.forward ? 1 : 0) + (input.backward ? -1 : 0);
   const length = Math.hypot(moveX, moveZ) || 1;
   const nx = moveX / length;
@@ -40,8 +40,9 @@ export function simulatePlayer(state: SimulationState, input: PlayerInput, dt: n
 
   const yawSin = Math.sin(input.yaw);
   const yawCos = Math.cos(input.yaw);
-  const worldX = nx * yawCos + nz * yawSin;
-  const worldZ = nz * yawCos - nx * yawSin;
+  // Three.js camera forward is -Z at yaw 0. Right is +X.
+  const worldX = nx * yawCos - nz * yawSin;
+  const worldZ = -nz * yawCos - nx * yawSin;
 
   const response = 1 - Math.exp(-12 * step);
   next.velocity[0] += (worldX * speed - next.velocity[0]) * response;
