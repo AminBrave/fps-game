@@ -53,7 +53,8 @@ export class SnapshotInterpolationBuffer {
       };
     }
 
-    const alpha = THREE.MathUtils.smoothstep((target - a.time) / Math.max(1, b.time - a.time), 0, 1);
+    const raw = THREE.MathUtils.clamp((target - a.time) / Math.max(1, b.time - a.time), 0, 1);
+    const alpha = raw * raw * (3 - 2 * raw);
     return {
       ...b.state,
       position: [
