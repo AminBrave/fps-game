@@ -711,14 +711,12 @@ export default function App() {
       g.leanAngle = THREE.MathUtils.lerp(g.leanAngle, g.targetLeanAngle, dt * 10.0);
 
       // 5. FPS Movement Vector
-      const moveVec = new THREE.Vector3();
-      if (g.keys.KeyW) moveVec.z += 1;
-      if (g.keys.KeyS) moveVec.z -= 1;
-      if (g.keys.KeyA) moveVec.x += 1;
-      if (g.keys.KeyD) moveVec.x -= 1;
-      moveVec.normalize();
-
-      // Transform by Player Yaw
+      const moveVec = new THREE.Vector3(
+        (g.keys.KeyD ? 1 : 0) + (g.keys.KeyA ? -1 : 0),
+        0,
+        (g.keys.KeyW ? -1 : 0) + (g.keys.KeyS ? 1 : 0),
+      );
+      if (moveVec.lengthSq() > 0) moveVec.normalize();
       moveVec.applyAxisAngle(new THREE.Vector3(0, 1, 0), g.yaw);
 
       // Send compact input samples at 20Hz. The server ignores the pose fields
@@ -783,8 +781,8 @@ export default function App() {
       g.pos.y += g.vel.y * dt;
       g.pos.z += g.vel.z * dt;
 
-      g.pos.x = Math.max(-23.0, Math.min(23.0, g.pos.x));
-      g.pos.z = Math.max(-23.0, Math.min(23.0, g.pos.z));
+      g.pos.x = Math.max(-47.0, Math.min(47.0, g.pos.x));
+      g.pos.z = Math.max(-47.0, Math.min(47.0, g.pos.z));
 
       if (g.pos.y <= targetCameraHeight) {
         g.pos.y = targetCameraHeight;
