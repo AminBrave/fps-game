@@ -50,7 +50,8 @@ app.post('/api/rooms', (req: Request, res: Response) => {
   const botCount = Math.max(0, Math.min(16, Number(req.body?.botCount) || 0));
   const maxPlayers = Math.max(1, Math.min(32, Number(req.body?.maxPlayers) || 12));
   const room = rooms.create(hostId, { map, weather, botCount, maxPlayers });
-  res.status(201).json(room);
+  rooms.leave(room.id, hostId);
+  res.status(201).json(rooms.summary(room.id));
 });
 
 app.post('/api/auth/token', (req: Request, res: Response) => {
