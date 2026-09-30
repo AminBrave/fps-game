@@ -3,6 +3,8 @@ name: Temporary TypeScript Diagnostics
 on:
   push:
     branches: ["overhaul/**"]
+  pull_request:
+    branches: ["main"]
 
 permissions:
   contents: read
