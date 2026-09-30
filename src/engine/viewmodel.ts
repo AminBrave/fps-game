@@ -44,6 +44,7 @@ export function getSocketWorldPosition(
   target = new THREE.Vector3(),
 ) {
   socket.updateWorldMatrix(true, false);
+  mainCamera.updateMatrixWorld(true);
   target.copy(socket.getWorldPosition(new THREE.Vector3()));
   return target.applyMatrix4(mainCamera.matrixWorld);
 }
