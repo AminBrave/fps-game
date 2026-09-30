@@ -113,10 +113,12 @@ export default function App() {
   const settingsRef = useRef(settings);
   const matchSettingsRef = useRef(matchSettings);
   const currentWeaponRef = useRef(currentWeapon);
+  const camoRef = useRef(camo);
   const lastNetworkSendRef = useRef(0);
   settingsRef.current = settings;
   matchSettingsRef.current = matchSettings;
   currentWeaponRef.current = currentWeapon;
+  camoRef.current = camo;
 
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
@@ -570,7 +572,7 @@ export default function App() {
     renderer.compile(scene, camera);
 
     // Spawn initial turntable weapon in staging lobby
-    const initialTableMesh = createWeaponMesh(currentWeaponRef.current, camo, true);
+    const initialTableMesh = createWeaponMesh(currentWeaponRef.current, camoRef.current, true);
     turntableWeaponRef.current = initialTableMesh;
     scene.add(initialTableMesh);
 
@@ -1017,15 +1019,6 @@ export default function App() {
     animationFrameId = requestAnimationFrame(tick);
 
     return () => {
-      cancelAnimationFrame(animationFrameId);
-      window.removeEventListener('resize', handleResize);
-      renderer.dispose();
-      if (mount && renderer.domElement) {
-        mount.removeChild(renderer.domElement);
-      }
-    };
-  }, []);
-urn () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
