@@ -1,5 +1,5 @@
 /**
- * BreachPoint Tactical Pre-Game Staging Lobby
+ * Aegis Protocol Tactical Pre-Game Staging Lobby
  * Interactive 3D Gunsmith Turntable, Bot Roster & AI Difficulty Customizer,
  * Real-World Ballistics Toggles, Audio/Graphics Sliders, and Match Deploy Trigger.
  */
@@ -102,9 +102,9 @@ export const Lobby: React.FC<LobbyProps> = ({
             </span>
           </div>
           <h1 className="text-2xl font-black tracking-wider text-zinc-100 uppercase">
-            BREACH<span className="text-amber-500">POINT</span>
+            AEGIS<span className="text-amber-500"> PROTOCOL</span>
           </h1>
-          <span className="text-xs text-zinc-400 font-mono">v1.2 // MICRO-VOXEL TACTICAL FPS</span>
+          <span className="text-xs text-zinc-400 font-mono">M0 // BROWSER TACTICAL FPS</span>
         </div>
 
         {/* Tab Navigation */}
